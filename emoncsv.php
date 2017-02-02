@@ -1,9 +1,17 @@
 #!/usr/bin/php
 <?php
-/* This software copyright 2017 by Thundersun, Inc..
+/* Copyright 2017 by Thundersun, Inc.
  * You may use it according to the terms of the accompanying license.
  * 
- * This script loops through a CSV file and uploads it to your EmonCMS server.
+ * WHAT IS IT?
+ * This script interacts with your EmonCMS server.  Among other things, it:
+ * - pushes a random value at a specified interval, for testing live updates.
+ * - bulk uploads a CSV including a PHP-comprehensible datetime and a number, in some column.
+ * 
+ * 
+ * TODO:
+ * - make the commandline options match the settings class.
+ * 
  */
 // An assortment of defaults.
 $host_em = new Host([
