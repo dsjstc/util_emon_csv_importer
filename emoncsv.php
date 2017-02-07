@@ -13,26 +13,51 @@
  * - more validations on the settings / parameters
  */
 
-// Load some defaults, if you want.
+// Settings.php creates the following global static members:
 //G::$host = new Host();
 //G::$settings = new Settings();
 include "settings.php";
 
 // MAIN PROGRAM LOGIC
-G::$settings->parse_args();
+Settings::parse_and_validate();
 
-if( G::$settings->dumpRows ) 
+if( G::$settings->dumpSettings ) {
+	// Must be here; the switch doesn't process in order.
+	print("Dump settings requested, exiting.\n");
+	print_r(G::$settings); 
+	exit();
+}
+
+switch(true) {
+case G::$settings->printHelp:
+	G::$settings->print_help();
+	exit;
+	
+case G::$settings->dumpRows:
 	dump_columns();
+	break;
 
-if( G::$settings->flooper ) 
+case G::$settings->flooper:
 	flooper();
+	break;
 
-if( G::$settings->sendBulk 
-||  G::$settings->printBulk ) 
+case G::$settings->sendBulk
+||  G::$settings->printBulk:
 	send_chunks();
-
+	break;
+	
+case G::$settings->createInput:
+	createInput();
+	break;
+}
 
 // FUNCTIONS
+function createInput() {
+	// Make a post like this one:
+	// http://em/emoncms/input/post.json?time=0&node=1&csv=0
+	sendPoint(0,0);
+}
+
 function flooper() {
 	// increments consumption by random integer 1 to 10 units.
 	$i=0;
@@ -43,20 +68,20 @@ function flooper() {
 		if( $add++ > 10 ) $add = 0;
 		$total += $add;
 		$bulkData = '['.$timestamp.','.G::$settings->NodeNum.','.$total.']';
-		sendPoint($total);
+		$point_time = time();
+		sendPoint($total, $point_time);
 		//print "sending: ".$bulkData."\r\n";
 		sleep(G::$settings->flooper);
 		$i++;
 	}
 }
 
-function sendPoint($totalCons) {
+function sendPoint($totalCons, $point_time) {
 	$emoncms_url =  G::$host->url."input/post.json";
 	$emoncms_api = G::$host->api;
 	$nodeNum = G::$settings->NodeNum;
 
-	$time_now = time();
-	$sendTo = $emoncms_url."?time=$time_now"."&apikey=".$emoncms_api."&node=".$nodeNum;
+	$sendTo = $emoncms_url."?time=$point_time"."&apikey=".$emoncms_api."&node=".$nodeNum;
 	$wholeUrl=$sendTo."&csv=".$totalCons;
 	print $wholeUrl. "\n";
 
@@ -201,6 +226,7 @@ class G {
 	// Holder for global statics (for concise global access)
 	public static $settings;
 	public static $host;
+	public static $cmdlinesettings;
 }
 
 class Settings {
@@ -225,54 +251,88 @@ class Settings {
 	public $maxRows;  	// Ignore input file beyond this many rows.
 	public $verbose;	// extra console output
 	public $format;		// add newlines to output
+	public $dumpSettings;// dump settings for debugging
 
 	// ACTION FLAGS (only one of these can be set!)
+	public $printHelp = FALSE;
 	public $dumpRows = FALSE;  	// Dump this many rows on the console and exit. [debugging]
 	public $flooper = FALSE;	// Every $flooper seconds, uploads a random value 1-10.
 	public $sendBulk = FALSE;   // Upload bulk data
 	public $printBulk = FALSE; 	// Show what would have been sent, if this were a real send.
-	
-	function parse_args() {
-		global $argv;
+	public $createInput = FALSE;// Create an empty input, so you can go and make some feeds.
 
-		$longopts  = array(
-			"format" );
-		$opts = getopt('hdf:spvc:r:e:t:d:n:m:g:', $longopts, $optind);
-		$pos_args = array_slice($argv, $optind);
+	// Other properties
+	private $parsed = FALSE;
 
-		// Help.
-		if( isset($opts["h"]) ) {
-			$this->print_help();
+	public static function parse_and_validate() {
+		// 1. Validate commandline arguments.
+		G::$cmdlinesettings = new Settings(); // Validate the commandline without settings.php interference.
+		G::$cmdlinesettings->parse_args();
+		G::$cmdlinesettings->validate_settings("commandline");
+
+		// 2. Validate settings.php 
+		G::$settings->validate_settings("settings");
+
+		// 3. Parse commandline into global settings and validate again.
+		G::$settings->parse_args();
+		G::$settings->validate_settings("settings and commandline");
+	}
+
+	function validate_settings($argsrc) {		
+		// Validates that the settings are sane.
+		if( $this->count_actions() > 1 ) {
+			print("Error: More than one action requested with $argsrc\n");
+			print_r($this);
 			exit();
 		}
+			
+		// Misc settings
+		if( $this->maxRows == 0 ) 
+			$this->maxRows = PHP_INT_MAX;
+	}
+	
+	function parse_args() {
+		// Am I global?
+		$amGlobal = false;
+		if( $this == G::$settings ) $amGlobal = true;
+		
+		// load commandline args into properties.
+		global $argv;
+		$longopts  = array("format", "help", "settings" );
+		$opts = getopt('iohdcf:spvx:r:e:t:d:n:m:g:', $longopts, $optind);
+		$pos_args = array_slice($argv, $optind);
 
-		// Actions
-		if( $this == G::$settings ) {
-			$emptysettings = new Settings(); // Create a settings object without settings.php interference.
-			$emptysettings->parse_args();
-			$cmdlineactions =  $emptysettings->count_actions();
-			$settingsactions = $this->count_actions();
-			if( $cmdlineactions > 0 &&  $settingsactions > 0) {
+		// Only when parsing args in global settings, clear defaults if necessary.
+		if( $amGlobal 
+		&& G::$cmdlinesettings-> count_actions() > 0 
+		&&  G::$settings-> count_actions() > 0) {
 				// action specified in settings and on the commandline.
-				print "Commandline action, clearing actions from settings.php\n";
+				print "Commandline action overrides action from settings.php\n";
 				$this->dumpRows = FALSE;
 				$this->flooper = 0;
 				$this->sendBulk = FALSE;
 				$this->printBulk = FALSE;
-			}
+				$this->createInput = FALSE;
+				$this->printHelp = FALSE;
 		}
+		
+		// Set properties based on options.
 		if( isset($opts["d"]) ) $this->dumpRows = TRUE;
 		if( isset($opts["f"]) ) $this->flooper = $opts["f"];
 		if( isset($opts["s"]) ) $this->sendBulk = TRUE;
 		if( isset($opts["p"]) ) $this->printBulk = TRUE;
+		if( isset($opts["h"]) ) $this->printHelp = TRUE;
+		if( isset($opts["help"]) ) $this->printHelp = TRUE; // NB: getopt is broken for long options.
+		if( isset($opts["c"]) ) $this->createInput = TRUE;
 
 		// Flags
 		if( isset($opts["v"]) ) $this->verbose = $opts["v"];
-		if( isset($opts["format"]) ) $this->format = TRUE;
+		if( isset($opts["o"]) ) $this->format = TRUE;
+		if( isset($opts["i"]) ) $this->dumpSettings = TRUE;
 
 		// Settings
 		//if( isset($opts["I"]) ) $this->InputFile;
-		if( isset($opts["c"]) ) $this->chunkSize = $opts["c"];
+		if( isset($opts["x"]) ) $this->chunkSize = $opts["x"];
 		if( isset($opts["r"]) ) $this->Serial 	= $opts["r"];
 		if( isset($opts["e"]) ) $this->SubDevice = $opts["e"];
 		if( isset($opts["t"]) ) $this->TimeCol = $opts["t"];
@@ -280,20 +340,17 @@ class Settings {
 		if( isset($opts["n"]) ) $this->NodeNum = $opts["n"];
 		if( isset($opts["m"]) ) $this->maxRows = $opts["m"];
 
-		// File.
-		if( isset($pos_args[0]) ) $this->InputFile = $pos_args[0];
-
-		// Misc settings
-		if( $this->maxRows == 0 ) 
-			$this->maxRows = PHP_INT_MAX;
-		
-		// Validate only one action.
-		$a = $this->count_actions();
-		if( $a > 1 ) {
-			print("Error: Specified more than one action.\n");
-			print_r(G::$settings);
-			exit();
+		// File -- positional parameters not otherwise specified.
+		foreach( $pos_args as $parg ) {
+			if (isset ($this->InputFile ) ) {
+				print("Quitting due to second filename specified: $parg\n");
+				print("Use -h or --help.\n");
+				exit();
+			} else {
+				$this->InputFile = $pos_args[0];
+			}
 		}
+		
 	}
 	function count_actions() {
 		$a = 0;
@@ -301,6 +358,8 @@ class Settings {
 		if( $this->flooper ) $a++;
 		if( $this->sendBulk ) $a++;
 		if( $this->printBulk ) $a++;
+		if( $this->createInput ) $a++;
+		if( $this->printHelp ) $a++;
 		return $a;
 	}
 	function print_help() {
@@ -312,14 +371,17 @@ Actions:
   -f - send random consumption
   -s - send bulk data to server
   -p - print bulk data that would be sent to server
+  -c - create empty input for the current node (you need to establish feeds before uploading)
+  -h - print this help
 
 Flags:
   -v - extra console output, sometimes.
-  --format - format console output with newlines
+  -o - format console output with newlines
+  -i - dump parsed settings and exit
   
 Settings:
   -gX - load specified instead of settings.php (not implemented)
-  -cN - upload no more than N rows at a time
+  -xN - upload no more than N rows at a time
   -rX - set data source's serial number to X (does nothing at present) 
   -eX - set data source subdevice to X (does nothing at present) 
   -tN - N is 0-base offset to column with human-readable time data in UTC
