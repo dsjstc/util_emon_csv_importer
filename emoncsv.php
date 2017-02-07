@@ -9,41 +9,15 @@
  * - bulk uploads a CSV including a PHP-comprehensible datetime and a number, in some column.
  * 
  * TODO:
- * - make the commandline options match the settings class.
- * 
+ * - test the options (all testing thus far has been done with settings.php)
+ * - more validations on the settings / parameters
  */
-// An assortment of defaults.
-$host_em = new Host([
-	'url'=>'http://em/emoncms/', 
-	'api'=>'c1a5bfb60b1adea646ea6867a496c1d5', 
-	'uspw'=>'atat:bb' ]);
 
-$host_emoncmsorg = new Host([
-	'url'=>'http://emoncms.org/emoncms/', 
-	'api'=>'YOUR_KEY_HERE' ]);
-
-G::$host = $host_em;
-G::$settings = new Settings([
-	// Actions
-	//'flooper' =>1, // 6 seconds per loop
-	//'dumpRows' => TRUE, // Dump maxRows and exit
-	'sendBulk' => TRUE,
-	//'printBulk' => TRUE,
-	// Settings
-	'InputFile' => "m30.csv",
-	'Serial' => "001EC6000783",
-	'SubDevice' => "mb250",
-	'TimeCol' =>0,
-	'DataCol' =>4,
-	'NodeNum' =>2,
-	'chunkSize' => 4,
-	'maxRows' =>14 , 
-	'verbose' => TRUE
-	]);
-
+// Load some defaults.
+include "settings.php";
 
 // MAIN PROGRAM LOGIC
-parse_args();
+G::$settings->parse_args();
 
 if( G::$settings->dumpRows ) 
 	dump_columns();
@@ -102,43 +76,6 @@ function sendPoint($totalCons) {
 	print "($rcode)---"; 
 	print $response;
 	print "===\r\n";
-}
-
-function parse_args() {
-	global $argv;
-
-	$opts = getopt('h', [], $optind);
-	$pos_args = array_slice($argv, $optind);
-
-	// Help.
-	if( isset($opts["h"]) ) {
-		print "Usages: \n";
-		print "emoncsv.php -h\n";
-		print "emoncsv.php FILENAME.CSV\n";
-		exit();
-	}
-
-	// File.
-	if( isset($pos_args[0]) ) G::$settings->InputFile = $pos_args[0];
-
-	// Misc settings
-	if( G::$settings->maxRows == 0 ) 
-		G::$settings->maxRows = PHP_INT_MAX;
-	
-	// Validate only one action.
-	$a = 0;
-	if( G::$settings->dumpRows ) $a++;
-	if( G::$settings->flooper ) $a++;
-	if( G::$settings->sendBulk ) $a++;
-	if( G::$settings->printBulk ) $a++;
-	
-	if( $a == 0 )  G::$settings->sendBulk = TRUE;
-	if( $a > 1 ) {
-		print("Error: Specified more than one action.\n");
-		print_r(G::$settings);
-		exit();
-	}
-
 }
 
 // BULK HANDLING FUNCTIONS
@@ -259,14 +196,11 @@ class Settings {
 	public function __construct($row){
 	 foreach ($row as $prop=>$value){
 		if( property_exists(get_class(), $prop) ) {
-			$this->$prop=$value;
-		}
-		else {
+			$this->$prop=$value; 
+		} else {
 			print("Bad property: ".$prop."\n");
 			print_r( debug_backtrace() );
-		}
-	 }
-	}	
+		} } }	
 
 	// SETTINGS
 	public $InputFile;  // CSV file to parse.
@@ -284,6 +218,79 @@ class Settings {
 	public $flooper;	// Every $flooper seconds, uploads a random value 1-10.
 	public $sendBulk;   // Upload bulk data
 	public $printBulk; 	// Show what would have been sent, if this were a real send.
+	
+	function parse_args() {
+		global $argv;
+
+		$opts = getopt('hdf:spvc:r:e:t:d:n:m:', [], $optind);
+		$pos_args = array_slice($argv, $optind);
+
+		// Help.
+		if( isset($opts["h"]) ) {
+			echo("Usages: \n
+emoncsv.php -h
+emoncsv.php [options] FILENAME.CSV\n
+Actions:
+  -d - dump rows
+  -f - send random consumption
+  -s - send bulk data to server
+  -p - print bulk data that would be send to server
+
+Flags:
+  -v - extra console output, sometimes.
+  
+Settings:
+  -cN - upload no more than N rows at a time
+  -rX - set data source's serial number to X (does nothing at present) 
+  -eX - set data source subdevice to X (does nothing at present) 
+  -tN - extract time data from human-readable date string in column N
+  -dN - extract upload data from numeric value in column N
+  -nN - upload to EmonCMS node number N
+  -mN - stop processing after N input rows
+"); 
+			exit();
+		}
+
+		// Actions
+		if( isset($opts["d"]) ) G::$settings->dumpRows = TRUE;
+		if( isset($opts["f"]) ) G::$settings->flooper = $opts["f"];
+		if( isset($opts["s"]) ) G::$settings->sendBulk = TRUE;
+		if( isset($opts["p"]) ) G::$settings->printBulk = TRUE;
+
+		// Flags
+		if( isset($opts["v"]) ) G::$settings->verbose = $opts["v"];
+
+		// Settings
+		//if( isset($opts["I"]) ) G::$settings->InputFile;
+		if( isset($opts["c"]) ) G::$settings->chunkSize = $opts["c"];
+		if( isset($opts["r"]) ) G::$settings->Serial 	= $opts["r"];
+		if( isset($opts["e"]) ) G::$settings->SubDevice = $opts["e"];
+		if( isset($opts["t"]) ) G::$settings->TimeCol = $opts["t"];
+		if( isset($opts["d"]) ) G::$settings->DataCol = $opts["d"];
+		if( isset($opts["n"]) ) G::$settings->NodeNum = $opts["n"];
+		if( isset($opts["m"]) ) G::$settings->maxRows = $opts["m"];
+
+		// File.
+		if( isset($pos_args[0]) ) G::$settings->InputFile = $pos_args[0];
+
+		// Misc settings
+		if( G::$settings->maxRows == 0 ) 
+			G::$settings->maxRows = PHP_INT_MAX;
+		
+		// Validate only one action.
+		$a = 0;
+		if( G::$settings->dumpRows ) $a++;
+		if( G::$settings->flooper ) $a++;
+		if( G::$settings->sendBulk ) $a++;
+		if( G::$settings->printBulk ) $a++;
+		
+		if( $a == 0 )  G::$settings->sendBulk = TRUE;
+		if( $a > 1 ) {
+			print("Error: Specified more than one action.\n");
+			print_r(G::$settings);
+			exit();
+		}
+	}
 }
 
 class Host {
@@ -291,13 +298,10 @@ class Host {
 	 foreach ($row as $prop=>$value){
 		if( property_exists(get_class(), $prop) ) {
 			$this->$prop=$value;
-		}
-		else {
+		} else {
 			print("Bad property: ".$prop."\n");
 			print_r( debug_backtrace() );
-		}
-	 }
-	}	
+		} } }	
 	
 	public $url;
 	public $api;
