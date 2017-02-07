@@ -22,6 +22,14 @@ G::$settings = new Settings([
 	//'dumpRows' => TRUE, 	// dump minimally parsed input data.
 	//'sendBulk' => TRUE,	// Send bulk to G::$host
 	'printBulk' => TRUE,	// Dry run.
+    //'printHelp' => '',
+    //'createInput' => ''	// Create an input node so you can make some feeds.
+	
+	// Flags
+	'verbose' => TRUE		// Extra console output
+    'format' => FALSE,		// add newlines to output
+    'dumpSettings' => FALSE, // dump all settings and exit
+
 	
 	// Settings
 	'InputFile' => "example.csv",
@@ -31,6 +39,5 @@ G::$settings = new Settings([
 	'DataCol' =>4,					// Which column has the upload data
 	'NodeNum' =>2,					// Which EMONCMS node to upload to.
 	'chunkSize' => 4,				// How many rows to upload to Emon at one time
-	'maxRows' =>0 , 				// Stop after this many input rows (0 == MAX_INT)
-	'verbose' => TRUE				// Extra console output
+	'maxRows' =>0   				// Stop after this many input rows (0 == MAX_INT)
 	]);
