@@ -13,7 +13,9 @@
  * - more validations on the settings / parameters
  */
 
-// Load some defaults.
+// Load some defaults, if you want.
+//G::$host = new Host();
+//G::$settings = new Settings();
 include "settings.php";
 
 // MAIN PROGRAM LOGIC
@@ -36,7 +38,7 @@ function flooper() {
 	$i=0;
 	$total = 0;
 	$add = 0;
-	while( true ) {
+	while( $i < G::$settings->maxRows ) {
 		$timestamp = time();
 		if( $add++ > 10 ) $add = 0;
 		$total += $add;
@@ -45,7 +47,6 @@ function flooper() {
 		//print "sending: ".$bulkData."\r\n";
 		sleep(G::$settings->flooper);
 		$i++;
-		//if( $i > 1 ) break;
 	}
 }
 
@@ -193,8 +194,9 @@ class G {
 }
 
 class Settings {
-	public function __construct($row){
-	 foreach ($row as $prop=>$value){
+	public function __construct($arglist = null){
+	if( $arglist == null ) return;
+	 foreach ($arglist as $prop=>$value){
 		if( property_exists(get_class(), $prop) ) {
 			$this->$prop=$value; 
 		} else {
@@ -214,10 +216,10 @@ class Settings {
 	public $verbose;
 
 	// ACTION FLAGS (only one of these can be set!)
-	public $dumpRows;  	// Dump this many rows on the console and exit. [debugging]
-	public $flooper;	// Every $flooper seconds, uploads a random value 1-10.
-	public $sendBulk;   // Upload bulk data
-	public $printBulk; 	// Show what would have been sent, if this were a real send.
+	public $dumpRows = FALSE;  	// Dump this many rows on the console and exit. [debugging]
+	public $flooper = FALSE;	// Every $flooper seconds, uploads a random value 1-10.
+	public $sendBulk = FALSE;   // Upload bulk data
+	public $printBulk = FALSE; 	// Show what would have been sent, if this were a real send.
 	
 	function parse_args() {
 		global $argv;
@@ -227,7 +229,68 @@ class Settings {
 
 		// Help.
 		if( isset($opts["h"]) ) {
-			echo("Usages: \n
+			$this->print_help();
+			exit();
+		}
+
+		// Actions
+		if( $this == G::$settings ) {
+			$emptysettings = new Settings(); // Create a settings object without settings.php interference.
+			$emptysettings->parse_args();
+			$cmdlineactions =  $emptysettings->count_actions();
+			$settingsactions = $this->count_actions();
+			if( $cmdlineactions > 0 &&  $settingsactions > 0) {
+				// action specified in settings and on the commandline.
+				print "Commandline action, clearing actions from settings.php\n";
+				$this->dumpRows = FALSE;
+				$this->flooper = 0;
+				$this->sendBulk = FALSE;
+				$this->printBulk = FALSE;
+			}
+		}
+		if( isset($opts["d"]) ) $this->dumpRows = TRUE;
+		if( isset($opts["f"]) ) $this->flooper = $opts["f"];
+		if( isset($opts["s"]) ) $this->sendBulk = TRUE;
+		if( isset($opts["p"]) ) $this->printBulk = TRUE;
+
+		// Flags
+		if( isset($opts["v"]) ) $this->verbose = $opts["v"];
+
+		// Settings
+		//if( isset($opts["I"]) ) $this->InputFile;
+		if( isset($opts["c"]) ) $this->chunkSize = $opts["c"];
+		if( isset($opts["r"]) ) $this->Serial 	= $opts["r"];
+		if( isset($opts["e"]) ) $this->SubDevice = $opts["e"];
+		if( isset($opts["t"]) ) $this->TimeCol = $opts["t"];
+		if( isset($opts["d"]) ) $this->DataCol = $opts["d"];
+		if( isset($opts["n"]) ) $this->NodeNum = $opts["n"];
+		if( isset($opts["m"]) ) $this->maxRows = $opts["m"];
+
+		// File.
+		if( isset($pos_args[0]) ) $this->InputFile = $pos_args[0];
+
+		// Misc settings
+		if( $this->maxRows == 0 ) 
+			$this->maxRows = PHP_INT_MAX;
+		
+		// Validate only one action.
+		$a = $this->count_actions();
+		if( $a > 1 ) {
+			print("Error: Specified more than one action.\n");
+			print_r(G::$settings);
+			exit();
+		}
+	}
+	function count_actions() {
+		$a = 0;
+		if( $this->dumpRows ) $a++;
+		if( $this->flooper ) $a++;
+		if( $this->sendBulk ) $a++;
+		if( $this->printBulk ) $a++;
+		return $a;
+	}
+	function print_help() {
+		echo("Usages: \n
 emoncsv.php -h
 emoncsv.php [options] FILENAME.CSV\n
 Actions:
@@ -246,50 +309,7 @@ Settings:
   -tN - extract time data from human-readable date string in column N
   -dN - extract upload data from numeric value in column N
   -nN - upload to EmonCMS node number N
-  -mN - stop processing after N input rows
-"); 
-			exit();
-		}
-
-		// Actions
-		if( isset($opts["d"]) ) G::$settings->dumpRows = TRUE;
-		if( isset($opts["f"]) ) G::$settings->flooper = $opts["f"];
-		if( isset($opts["s"]) ) G::$settings->sendBulk = TRUE;
-		if( isset($opts["p"]) ) G::$settings->printBulk = TRUE;
-
-		// Flags
-		if( isset($opts["v"]) ) G::$settings->verbose = $opts["v"];
-
-		// Settings
-		//if( isset($opts["I"]) ) G::$settings->InputFile;
-		if( isset($opts["c"]) ) G::$settings->chunkSize = $opts["c"];
-		if( isset($opts["r"]) ) G::$settings->Serial 	= $opts["r"];
-		if( isset($opts["e"]) ) G::$settings->SubDevice = $opts["e"];
-		if( isset($opts["t"]) ) G::$settings->TimeCol = $opts["t"];
-		if( isset($opts["d"]) ) G::$settings->DataCol = $opts["d"];
-		if( isset($opts["n"]) ) G::$settings->NodeNum = $opts["n"];
-		if( isset($opts["m"]) ) G::$settings->maxRows = $opts["m"];
-
-		// File.
-		if( isset($pos_args[0]) ) G::$settings->InputFile = $pos_args[0];
-
-		// Misc settings
-		if( G::$settings->maxRows == 0 ) 
-			G::$settings->maxRows = PHP_INT_MAX;
-		
-		// Validate only one action.
-		$a = 0;
-		if( G::$settings->dumpRows ) $a++;
-		if( G::$settings->flooper ) $a++;
-		if( G::$settings->sendBulk ) $a++;
-		if( G::$settings->printBulk ) $a++;
-		
-		if( $a == 0 )  G::$settings->sendBulk = TRUE;
-		if( $a > 1 ) {
-			print("Error: Specified more than one action.\n");
-			print_r(G::$settings);
-			exit();
-		}
+  -mN - stop processing after N input rows\n"); 
 	}
 }
 
