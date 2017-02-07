@@ -74,7 +74,8 @@ function sendPoint($totalCons) {
 	$rcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 	curl_close($ch);
 
-	print "($rcode)---"; 
+	print "server response ($rcode): ---"; 
+	if(strlen($response) <= 0) $response = "no server response";
 	print $response;
 	print "===\r\n";
 }
@@ -139,11 +140,14 @@ function build_chunk($chunkarr) {
 	foreach( $chunkarr as $chunkrow ) {
 		$epochtime = $chunkrow[1];
 		$dataval = $chunkrow[2];
-		$datastr .= "[ $epochtime, $nodeNum, $dataval ],\n";
+		$datastr .= "[ $epochtime, $nodeNum, $dataval ],";
+		if(G::$settings->format) $datastr .= "\n";
+
 		//print ".$epochtime\n";
 	}
 	$datastr = rtrim($datastr, ",\n");
-	$datastr .= "  ]\n";
+	$datastr .= "  ]";
+	if(G::$settings->format) $datastr .= "\n";
 	return $datastr;
 }
 
@@ -166,7 +170,11 @@ function send_one_chunk($chunkarr) {
 			),
 			CURLOPT_SAFE_UPLOAD => true,
 			));
+		if( isset(G::$host->uspw) )
+			curl_setopt($ch, CURLOPT_USERPWD, G::$host->uspw);
+
 		$response = curl_exec($ch);
+		$rcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 		curl_close($ch);
 	} else {
 		$response = "server not contacted";
@@ -174,12 +182,14 @@ function send_one_chunk($chunkarr) {
 	
 	if( G::$settings->verbose  
 	|| G::$settings->printBulk ) {
-		print $sendTo. "&\n";
+		print $sendTo. "&";
+		if(G::$settings->format) print "\n";
 		print "data=" . $data;
 
-		print "\r\n----"; 
+		print "\nserver response ($rcode): ---"; 
+		if(strlen($response) <= 0) $response = "no server response";
 		print $response;
-		print "----\r\n";
+		print "===\r\n";
 	}
 
 	sleep(1);
@@ -213,7 +223,8 @@ class Settings {
 	public $DataCol; 	// Column offset to meter data.
 	public $NodeNum;
 	public $maxRows;  	// Ignore input file beyond this many rows.
-	public $verbose;
+	public $verbose;	// extra console output
+	public $format;		// add newlines to output
 
 	// ACTION FLAGS (only one of these can be set!)
 	public $dumpRows = FALSE;  	// Dump this many rows on the console and exit. [debugging]
@@ -224,7 +235,9 @@ class Settings {
 	function parse_args() {
 		global $argv;
 
-		$opts = getopt('hdf:spvc:r:e:t:d:n:m:', [], $optind);
+		$longopts  = array(
+			"format" );
+		$opts = getopt('hdf:spvc:r:e:t:d:n:m:g:', $longopts, $optind);
 		$pos_args = array_slice($argv, $optind);
 
 		// Help.
@@ -255,6 +268,7 @@ class Settings {
 
 		// Flags
 		if( isset($opts["v"]) ) $this->verbose = $opts["v"];
+		if( isset($opts["format"]) ) $this->format = TRUE;
 
 		// Settings
 		//if( isset($opts["I"]) ) $this->InputFile;
@@ -297,17 +311,19 @@ Actions:
   -d - dump rows
   -f - send random consumption
   -s - send bulk data to server
-  -p - print bulk data that would be send to server
+  -p - print bulk data that would be sent to server
 
 Flags:
   -v - extra console output, sometimes.
+  --format - format console output with newlines
   
 Settings:
+  -gX - load specified instead of settings.php (not implemented)
   -cN - upload no more than N rows at a time
   -rX - set data source's serial number to X (does nothing at present) 
   -eX - set data source subdevice to X (does nothing at present) 
-  -tN - extract time data from human-readable date string in column N
-  -dN - extract upload data from numeric value in column N
+  -tN - N is 0-base offset to column with human-readable time data in UTC
+  -dN - N is 0-base offset to numeric data value
   -nN - upload to EmonCMS node number N
   -mN - stop processing after N input rows\n"); 
 	}
