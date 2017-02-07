@@ -363,7 +363,7 @@ class Settings {
 		return $a;
 	}
 	function print_help() {
-		echo("Usages: \n
+		echo("Usage: \n
 emoncsv.php -h
 emoncsv.php [options] FILENAME.CSV\n
 Actions:
@@ -377,7 +377,7 @@ Actions:
 Flags:
   -v - extra console output, sometimes.
   -o - format console output with newlines
-  -i - dump parsed settings and exit
+  -i - dump all specified settings and exit
   
 Settings:
   -gX - load specified instead of settings.php (not implemented)

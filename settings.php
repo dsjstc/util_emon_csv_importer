@@ -9,7 +9,7 @@
 $host_em = new Host([
 	'url'=>'http://localhost/emoncms/', 
 	'api'=>'YOUR_LOCAL_KEY_HERE', 
-	'uspw'=>'username:password' ]); // Should it be necessary.
+	'uspw'=>'username:password' ]); // In case you have http authentication on your server
 
 $host_emoncmsorg = new Host([
 	'url'=>'http://emoncms.org/emoncms/', 
@@ -26,10 +26,9 @@ G::$settings = new Settings([
     //'createInput' => ''	// Create an input node so you can make some feeds.
 	
 	// Flags
-	'verbose' => TRUE		// Extra console output
+	'verbose' => TRUE,		// Extra console output
     'format' => FALSE,		// add newlines to output
     'dumpSettings' => FALSE, // dump all settings and exit
-
 	
 	// Settings
 	'InputFile' => "example.csv",
