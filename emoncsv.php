@@ -55,7 +55,7 @@ case G::$settings->createInput:
 function createInput() {
 	// Make a post like this one:
 	// http://em/emoncms/input/post.json?time=0&node=1&csv=0
-	sendPoint(0,0);
+	sendPoint(0,G::$settings->NodeNum,0);
 }
 
 function flooper() {
@@ -69,19 +69,20 @@ function flooper() {
 		$total += $add;
 		$bulkData = '['.$timestamp.','.G::$settings->NodeNum.','.$total.']';
 		$point_time = time();
-		sendPoint($total, $point_time);
+		sendPoint($total, G::$settings->NodeNum, $point_time);
 		//print "sending: ".$bulkData."\r\n";
 		sleep(G::$settings->flooper);
 		$i++;
 	}
 }
 
-function sendPoint($totalCons, $point_time) {
+function sendPoint($totalCons, $nodeNum, $point_time) {
 	$emoncms_url =  G::$host->url."input/post.json";
 	$emoncms_api = G::$host->api;
-	$nodeNum = G::$settings->NodeNum;
 
+	// EmonCMS.org does not respect any call with a time= argument.  
 	$sendTo = $emoncms_url."?time=$point_time"."&apikey=".$emoncms_api."&node=".$nodeNum;
+	#$sendTo = $emoncms_url."?apikey=".$emoncms_api."&node=".$nodeNum;
 	$wholeUrl=$sendTo."&csv=".$totalCons;
 	print $wholeUrl. "\n";
 
@@ -110,10 +111,10 @@ function dump_columns() {
 	$file = fopen(G::$settings->InputFile, 'r');
 	$chunkarr = get_chunk( $file, G::$settings->maxRows );
 	
-	echo "Time string, epoch time, data value\n";
-	array_map(function ($x) {
-		echo $x[0], "," , $x[1], ", ", $x[2], "\n";
-	}, $chunkarr);
+	echo "Time string, epoch time, data values...\n";
+	foreach( $chunkarr as $chunkrow ) {
+		echo str_putcsv($chunkrow);
+	}
 	fclose($file);
 }
 
@@ -132,9 +133,34 @@ function send_chunks() {
 	fclose($file);
 }
 
+/**
+ * Convert a multi-dimensional, associative array to CSV data
+ * @param  array $data the array of data
+ * @return string       CSV text
+ * https://coderwall.com/p/zvzwwa/array-to-comma-separated-string-in-php
+ */
+function str_putcsv($data) {
+        # Generate CSV data from array
+        $fh = fopen('php://temp', 'rw'); # don't create a file, attempt
+                                         # to use memory instead
+
+        # write out the headers
+        //fputcsv($fh, array_keys(current($data)));
+
+        # write out the data
+		fputcsv($fh, $data);
+        rewind($fh);
+        $csv = rtrim( stream_get_contents($fh), "\n\r");
+        fclose($fh);
+
+		
+        return $csv;
+}
+
 function get_chunk($infile, $max_rows) {
-	// returns an array comprising at most $max_rows of input data
+	// returns a 2D array comprising at most $max_rows of input data
 	$chunkarr = array();
+	$nodeNum = G::$settings->NodeNum;  
 	
 	for( $i=0; $i < $max_rows; $i++ ) {
 		$line = fgets($infile);
@@ -147,25 +173,26 @@ function get_chunk($infile, $max_rows) {
 			continue;
 		}
 		$timestr = $expl[G::$settings->TimeCol];
-		$chunkarr[$i][0] = $timestr;
-		$timestr = trim( $timestr, "'" );
-		$timestr .= " GMT";
+		$timestr = trim( $timestr, "'" ). " GMT";
 		$epoch = strtotime( $timestr );
-		$chunkarr[$i][1] = $epoch;
+		$chunkarr[$i][0] = $epoch;
+		$chunkarr[$i][1] = $nodeNum;
+		
 		//echo "$timestr : $epoch\n";
-		$chunkarr[$i][2] = $expl[G::$settings->DataCol];
+		foreach( G::$settings->DataCol as $dColOffset ) {
+			$chunkarr[$i][] = $expl[$dColOffset];
+		}
 	}
 	return $chunkarr;
 }
 
 function build_chunk($chunkarr) {
 	// returns complete data string
-	$nodeNum = G::$settings->NodeNum;  
 	$datastr = "[";
 	foreach( $chunkarr as $chunkrow ) {
-		$epochtime = $chunkrow[1];
-		$dataval = $chunkrow[2];
-		$datastr .= "[ $epochtime, $nodeNum, $dataval ],";
+		//$epochtime = $chunkrow[0];
+		//$dataval = $chunkrow[1];
+		$datastr .= "[" . str_putcsv($chunkrow) . "],";
 		if(G::$settings->format) $datastr .= "\n";
 
 		//print ".$epochtime\n";
@@ -203,6 +230,7 @@ function send_one_chunk($chunkarr) {
 		curl_close($ch);
 	} else {
 		$response = "server not contacted";
+		$rcode = '000';
 	}
 	
 	if( G::$settings->verbose  
@@ -234,7 +262,12 @@ class Settings {
 	if( $arglist == null ) return;
 	 foreach ($arglist as $prop=>$value){
 		if( property_exists(get_class(), $prop) ) {
-			$this->$prop=$value; 
+			if( is_array( $this->$prop ) ) {
+				$nva = explode(',', $value );
+				$this->$prop = array_merge( $this->$prop, $nva );
+				//print( "array add $prop = " . print_r($this->$prop, true) );
+			} else 
+				$this->$prop=$value; 
 		} else {
 			print("Bad property: ".$prop."\n");
 			print_r( debug_backtrace() );
@@ -246,7 +279,7 @@ class Settings {
 	public $Serial; 	// Acquisition device
 	public $SubDevice;	// Acquisition sub-device	  
 	public $TimeCol; 	// Column offset to date-time.
-	public $DataCol; 	// Column offset to meter data.
+	public $DataCol = []; 	// Column offset to meter data.
 	public $NodeNum;
 	public $maxRows;  	// Ignore input file beyond this many rows.
 	public $verbose;	// extra console output
@@ -299,7 +332,7 @@ class Settings {
 		// load commandline args into properties.
 		global $argv;
 		$longopts  = array("format", "help", "settings" );
-		$opts = getopt('iohdcf:spvx:r:e:t:d:n:m:g:', $longopts, $optind);
+		$opts = getopt('iohcf:spvx:r:e:t:d:n:m:g:', $longopts, $optind);
 		$pos_args = array_slice($argv, $optind);
 
 		// Only when parsing args in global settings, clear defaults if necessary.
@@ -336,7 +369,10 @@ class Settings {
 		if( isset($opts["r"]) ) $this->Serial 	= $opts["r"];
 		if( isset($opts["e"]) ) $this->SubDevice = $opts["e"];
 		if( isset($opts["t"]) ) $this->TimeCol = $opts["t"];
-		if( isset($opts["d"]) ) $this->DataCol = $opts["d"];
+		if( isset($opts["d"]) ) {
+			print_r(explode( ',', $opts["d"] ));
+			$this->DataCol = explode( ',', $opts["d"] );
+		}
 		if( isset($opts["n"]) ) $this->NodeNum = $opts["n"];
 		if( isset($opts["m"]) ) $this->maxRows = $opts["m"];
 
@@ -385,7 +421,7 @@ Settings:
   -rX - set data source's serial number to X (does nothing at present) 
   -eX - set data source subdevice to X (does nothing at present) 
   -tN - N is 0-base offset to column with human-readable time data in UTC
-  -dN - N is 0-base offset to numeric data value
+  -dXX- XX is a series of , delimited 0-base offsets to numeric data values in the CSV
   -nN - upload to EmonCMS node number N
   -mN - stop processing after N input rows\n"); 
 	}
