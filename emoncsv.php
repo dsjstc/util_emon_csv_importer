@@ -168,10 +168,18 @@ function get_chunk($infile, $max_rows) {
 		if( $line == FALSE ) break;
 		$line = trim($line);
 		$expl = explode(',', $line);
+		
+		// Verify / massage what we got
 		if( sizeof($expl) < 2 || strlen($line) == 0 ) {
 			print('bad line (' . strlen($line) . "/" . sizeof($expl) . '): ' . $line . "\n");
 			continue;
 		}
+		foreach ($expl as $key => $field) {
+			if( empty( $field ) ) {
+				$expl[$key] = 0;
+			}
+		}
+		
 		$timestr = $expl[G::$settings->TimeCol];
 		$timestr = trim( $timestr, "'" ). " GMT";
 		$epoch = strtotime( $timestr );
@@ -180,6 +188,7 @@ function get_chunk($infile, $max_rows) {
 		
 		//echo "$timestr : $epoch\n";
 		foreach( G::$settings->DataCol as $dColOffset ) {
+			//if( empty($expl[$dColOffset]) )  $expl[$dColOffset] = 0;
 			$chunkarr[$i][] = $expl[$dColOffset];
 		}
 	}
@@ -332,7 +341,7 @@ class Settings {
 		// load commandline args into properties.
 		global $argv;
 		$longopts  = array("format", "help", "settings" );
-		$opts = getopt('iohcf:spvx:r:e:t:d:n:m:g:', $longopts, $optind);
+		$opts = getopt('iouhcf:spvx:r:e:t:d:n:m:g:', $longopts, $optind);
 		$pos_args = array_slice($argv, $optind);
 
 		// Only when parsing args in global settings, clear defaults if necessary.
@@ -348,9 +357,15 @@ class Settings {
 				$this->createInput = FALSE;
 				$this->printHelp = FALSE;
 		}
+		if( $amGlobal
+		&& strlen( G::$cmdlinesettings->InputFile ) > 0
+		&& strlen( G::$settings->InputFile ) > 0 ) {
+			print("Override default input file\n");
+			unset($this->InputFile);
+		}
 		
 		// Set properties based on options.
-		if( isset($opts["d"]) ) $this->dumpRows = TRUE;
+		if( isset($opts["u"]) ) $this->dumpRows = TRUE;
 		if( isset($opts["f"]) ) $this->flooper = $opts["f"];
 		if( isset($opts["s"]) ) $this->sendBulk = TRUE;
 		if( isset($opts["p"]) ) $this->printBulk = TRUE;
@@ -370,7 +385,7 @@ class Settings {
 		if( isset($opts["e"]) ) $this->SubDevice = $opts["e"];
 		if( isset($opts["t"]) ) $this->TimeCol = $opts["t"];
 		if( isset($opts["d"]) ) {
-			print_r(explode( ',', $opts["d"] ));
+			//print_r(explode( ',', $opts["d"] ));
 			$this->DataCol = explode( ',', $opts["d"] );
 		}
 		if( isset($opts["n"]) ) $this->NodeNum = $opts["n"];
@@ -403,7 +418,7 @@ class Settings {
 emoncsv.php -h
 emoncsv.php [options] FILENAME.CSV\n
 Actions:
-  -d - dump rows
+  -u - dump rows
   -f - send random consumption
   -s - send bulk data to server
   -p - print bulk data that would be sent to server
@@ -416,14 +431,14 @@ Flags:
   -i - dump all specified settings and exit
   
 Settings:
-  -gX - load specified instead of settings.php (not implemented)
-  -xN - upload no more than N rows at a time
-  -rX - set data source's serial number to X (does nothing at present) 
-  -eX - set data source subdevice to X (does nothing at present) 
-  -tN - N is 0-base offset to column with human-readable time data in UTC
-  -dXX- XX is a series of , delimited 0-base offsets to numeric data values in the CSV
-  -nN - upload to EmonCMS node number N
-  -mN - stop processing after N input rows\n"); 
+  -gX - NOOP load specified instead of settings.php (not implemented)
+  -xN - CHUNKSIZE upload no more than N rows at a time
+  -rX - SERIAL set data source's serial number to X (does nothing at present) 
+  -eX - MBDEV set data source subdevice to X (does nothing at present) 
+  -tN - TIME N is 0-base offset to column with human-readable time data in UTC
+  -dXX- DATA XX is a series of , delimited 0-base offsets to numeric data values in the CSV
+  -nN - NODE upload to EmonCMS node number N
+  -mN - ROWS stop processing after N input rows\n"); 
 	}
 }
 
