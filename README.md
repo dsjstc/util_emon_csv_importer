@@ -1,5 +1,5 @@
 # emoncsv
-CSV importer for EmonCMS
+CSV importer for EmonCMS energy logger
 - bulk upload CSV data to EmonCMS.
 - loop upload consumption data for testing.
 
